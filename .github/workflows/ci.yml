@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    name: Smoke test (committed xcframework)
+    runs-on: macos-latest
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Smoke test on macOS host
+        run: swift test
+
+      - name: Pick iOS simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(./scripts/pick-simulator.sh)
+          echo "Selected UDID: $DEVICE_ID"
+          echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test on iOS Simulator
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme YrsFFI \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}"
+
+  # Verify the build script can still recreate a working xcframework from
+  # source. Only runs when scripts/, include/, or workflows change — the
+  # committed binary doesn't need rebuilding on every PR.
+  verify-rebuild:
+    name: Verify rebuild from source
+    runs-on: macos-latest
+    if: github.event_name == 'pull_request'
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect relevant changes
+        id: changes
+        run: |
+          if git diff --name-only origin/main...HEAD | grep -qE '^(scripts/|include/|\.github/workflows/)'; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            echo "No build-affecting changes — skipping rebuild verification"
+          fi
+
+      - name: Install Rust toolchain + Apple targets
+        if: steps.changes.outputs.rebuild == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo + target
+        if: steps.changes.outputs.rebuild == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: yffi-source -> target
+          key: ${{ hashFiles('include/VERSION') }}
+
+      - name: Rebuild YrsFFI.xcframework from source
+        if: steps.changes.outputs.rebuild == 'true'
+        run: ./scripts/build-xcframework.sh
+
+      - name: Smoke test newly-built binary on macOS
+        if: steps.changes.outputs.rebuild == 'true'
+        run: swift test
+
+      - name: Pick iOS simulator
+        if: steps.changes.outputs.rebuild == 'true'
+        id: sim
+        run: echo "id=$(./scripts/pick-simulator.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test newly-built binary on iOS Simulator
+        if: steps.changes.outputs.rebuild == 'true'
+        run: |
+          xcodebuild test \
+            -scheme YrsFFI \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}"

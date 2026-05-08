@@ -1,0 +1,3 @@
+yffi: 0.25.0
+header_source: https://github.com/y-crdt/y-crdt/blob/v0.25.0/tests-ffi/include/libyrs.h
+header_sha256: 870b2823b051f25de45a6e3f6d813a9657e048ca86d9bbcea39146128207503a

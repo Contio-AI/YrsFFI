@@ -1,0 +1,12 @@
+# SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj/
+Packages/
+
+# Build script scratch
+build/
+yffi-source/
+
+# macOS
+.DS_Store

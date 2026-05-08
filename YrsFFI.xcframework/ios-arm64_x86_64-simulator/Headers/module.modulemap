@@ -1,0 +1,5 @@
+module YrsFFI {
+    header "libyrs.h"
+    link "yrs"
+    export *
+}
